@@ -1,0 +1,119 @@
+# =============================================================================
+# separability_collapse.yaml — 核心诊断实验配置
+# Defense Drift 表一：可分性塌缩矩阵
+# =============================================================================
+
+# --- 模型路径（服务器上修改此处）---
+models:
+  generator:
+    path: "/path/to/Qwen3-8B"            # Qwen3-8B 本地路径或 HF model id
+    device: "cuda:0"
+    torch_dtype: "bfloat16"
+    max_length: 4096
+    output_attentions: true               # MUST: AttentionVarianceScorer 依赖此项
+  embedder:
+    path: "/path/to/Qwen3-Embedding-4B"   # 或 "BAAI/bge-large-en-v1.5" 等通用回退
+    device: "cuda:0"
+    batch_size: 32
+  reranker:
+    path: "/path/to/Qwen3-Reranker-8B"
+    device: "cuda:0"
+    enabled: true                         # false → 只用 embedder 检索
+
+# --- 检索配置（源域/目标域严格一致，换域只换语料）---
+retrieval:
+  chunk_size: 256
+  chunk_overlap: 32
+  top_k: 10
+  similarity_metric: "cosine"             # cosine | l2 | ip
+  faiss_index_type: "Flat"               # Flat | IVF256 | HNSW
+
+# --- 诊断信号 ---
+signals:
+  - perplexity            # PPL / RAGuard
+  - drs                   # Directional Relative Shift
+  - cluster_distance      # TrustRAG K-means 簇间距
+  - attention_variance    # Stealth Lens AV Filter
+
+# --- 域配置 ---
+domains:
+  source:
+    - nq                    # Natural Questions（通用 QA）
+    - hotpotqa              # HotpotQA（多跳推理）
+  target:
+    - bioasq                # BioASQ（医疗专业域）
+    - finance               # Finance（金融专业域）
+
+# --- 数据集加载配置 ---
+datasets:
+  nq:
+    hf_path: "natural_questions"
+    hf_subset: null
+    query_field: "question"
+    corpus_field: null         # null → 从检索 corpus 动态构建
+    max_queries: 500           # 诊断用 query 数
+  hotpotqa:
+    hf_path: "hotpotqa/hotpotqa"
+    hf_subset: "fullwiki"
+    query_field: "question"
+    corpus_field: null
+    max_queries: 500
+  bioasq:
+    hf_path: "bioasq"          # 或本地路径
+    hf_subset: null
+    query_field: "question"
+    corpus_field: null
+    max_queries: 500
+  finance:
+    hf_path: "AdaptLLM/finance-tasks"  # 或 RAG-QA Arena finance subset
+    hf_subset: null
+    query_field: "question"
+    corpus_field: null
+    max_queries: 500
+
+# --- 攻击配置 ---
+attacks:
+  - poisonedrag             # 基线投毒攻击
+  - corruptrag               # 强对抗攻击（更隐蔽）
+
+# --- 投毒比例 ---
+poison_ratios: [0.05, 0.1, 0.2, 0.4]
+
+# --- 投毒注入参数 ---
+poison:
+  # PoisonedRAG: 检索阶段注入与 query 语义相近但包含错误信息的 passage
+  poisonedrag:
+    generation_model: "generator"        # 用 generator 生投毒内容，或用 "template"
+    template_mode: "contradict"          # contradict | hallucinate | distract
+    injection_position: "top"            # top | random | bottom（注入到 top_k 的位置）
+  # CorruptRAG: 比 PoisonedRAG 更隐蔽——保留原文结构但篡改关键实体/数字
+  corruptrag:
+    generation_model: "generator"
+    corrupt_ratio: 0.3                   # 篡改 30% 的 token
+    preserve_structure: true             # 保留原文句法结构
+
+# --- 诊断参数 ---
+diagnostic:
+  probe_size: 50                         # 标定投毒侧分布的探针数（已知投毒）
+  clean_sample_size: 200                 # 干净侧采样数
+  random_seed: 42
+  min_auroc_threshold: 0.6               # AUROC < 此值 → 标记为"信号不可靠"
+
+# --- 输出 ---
+output:
+  results_dir: "./results"
+  csv_prefix: "collapse_matrix"
+  save_intermediate: true                # 保存每格中间结果（防中断丢失）
+  save_format: ["csv", "json"]           # 输出格式
+
+# --- 并行 ---
+parallel:
+  n_jobs: 4                              # 并行格数（受 GPU 内存限制，不宜过高）
+  gpu_memory_fraction: 0.9               # 单进程 GPU 内存上限
+
+# --- 验收标准 ---
+acceptance:
+  source_auroc_min: 0.80                 # 源域单信号 AUROC 下限
+  collapse_threshold: 0.10               # Δ_sep > 此值视为显著塌缩
+  min_collapse_signals: 3                # 至少 3/4 信号出现显著塌缩
+  corrupt_stronger_than_poisoned: true   # CorruptRAG Δ_sep ≥ PoisonedRAG Δ_sep

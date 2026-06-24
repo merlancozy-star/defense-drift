@@ -1,0 +1,1 @@
+# retrieval — embedder, chunker, and retriever

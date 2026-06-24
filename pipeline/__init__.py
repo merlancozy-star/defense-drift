@@ -1,0 +1,1 @@
+# pipeline — assemble and orchestrate the separability diagnostic
