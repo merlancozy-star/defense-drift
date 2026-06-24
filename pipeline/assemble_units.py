@@ -63,10 +63,14 @@ class UnitAssembler:
         """
         # 1. Load queries
         queries = self.loader.load_queries(domain, max_queries=max_queries)
-
-        # 2. Retrieve + inject + score per query
-        all_units = []
         top_k = self.config.retrieval.top_k
+
+        # 2. Calibration pass (for scorers that need it, e.g., DRS)
+        if self.scorer.needs_calibration and self.retriever.embedder is not None:
+            self._run_calibration(queries, top_k)
+
+        # 3. Retrieve + inject + score per query
+        all_units = []
 
         for query in queries:
             try:
@@ -106,7 +110,7 @@ class UnitAssembler:
             logger.error(f"No units assembled for domain={domain}, ratio={poison_ratio}")
             return [], float("nan")
 
-        # 3. Compute AUROC
+        # 4. Compute AUROC
         scores_arr = np.array([u.get_signal(self.scorer.name) for u in all_units])
         labels_arr = np.array([1 if u.is_poison else 0 for u in all_units])
 
@@ -119,6 +123,41 @@ class UnitAssembler:
         )
 
         return all_units, auroc
+
+    def _run_calibration(self, queries: List[Query], top_k: int):
+        """Calibrate scorer on clean passage embeddings.
+
+        Retrieves clean passages for all queries, embeds them,
+        and feeds the embeddings to scorer.calibrate().
+
+        Only used by scorers where needs_calibration=True (e.g., DRS).
+        """
+        clean_texts = []
+        max_calibration_queries = min(
+            len(queries),
+            self.config.diagnostic.clean_sample_size // top_k
+        )
+
+        for query in queries[:max_calibration_queries]:
+            try:
+                clean_passages = self.retriever.search(query.text, top_k=top_k)
+                clean_texts.extend([p.text for p in clean_passages])
+            except Exception as e:
+                logger.debug(f"Calibration: skipped query {query.id}: {e}")
+
+        if len(clean_texts) < 10:
+            logger.warning(
+                f"Too few clean passages ({len(clean_texts)}) for calibration. "
+                f"DRS may be unstable."
+            )
+            return
+
+        logger.info(
+            f"Calibrating {self.scorer.name} on {len(clean_texts)} clean passages..."
+        )
+        clean_embeddings = self.retriever.embedder.encode_passages(clean_texts)
+        self.scorer.calibrate(clean_embeddings)
+        logger.info(f"Calibration complete for {self.scorer.name}")
 
     def get_cell_result(
         self,

@@ -47,6 +47,26 @@ class BaseScorer(ABC):
         """
         ...
 
+    @property
+    def needs_calibration(self) -> bool:
+        """Whether this scorer needs a calibration phase before scoring.
+
+        Override to return True for scorers that need to estimate
+        clean-distribution parameters (e.g., DRS via PCA).
+        """
+        return False
+
+    def calibrate(self, clean_embeddings: np.ndarray):
+        """Calibrate scorer on clean passage embeddings.
+
+        Called once per domain before scoring. Default is no-op.
+        Override for scorers that need distribution estimation.
+
+        Args:
+            clean_embeddings: [N, D] array of clean passage embeddings.
+        """
+        pass
+
     def batch_score(
         self,
         queries: List[str],
