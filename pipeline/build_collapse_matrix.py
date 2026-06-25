@@ -82,14 +82,19 @@ class CollapseMatrixBuilder:
         )
         self._generator.load()
 
-        # Reranker (optional)
+        # Reranker (optional — graceful degradation on failure)
         if self.config.reranker.enabled:
-            self._reranker = RerankerWrapper(
-                model_path=self.config.reranker.path,
-                device=self.config.reranker.device,
-                torch_dtype=self.config.reranker.torch_dtype,
-            )
-            self._reranker.load()
+            try:
+                self._reranker = RerankerWrapper(
+                    model_path=self.config.reranker.path,
+                    device=self.config.reranker.device,
+                    torch_dtype=self.config.reranker.torch_dtype,
+                )
+                self._reranker.load()
+            except Exception as e:
+                logger.warning(f"Reranker failed to load ({e}). Disabling reranker.")
+                self.config.reranker.enabled = False
+                self._reranker = None
 
         logger.info("All models loaded")
 
