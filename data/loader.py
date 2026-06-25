@@ -4,6 +4,8 @@ Supports: NQ, HotpotQA (source domains), BioASQ, Finance (target domains).
 All datasets are loaded via HuggingFace datasets with a unified interface.
 """
 
+import json
+import os
 import random
 import logging
 from typing import List, Optional
@@ -43,7 +45,15 @@ class DatasetLoader:
         if max_queries is None:
             max_queries = domain_cfg.max_queries
 
-        # Skip HF entirely in offline mode (avoids network timeout delays)
+        # 1. Try local JSONL file first (fastest, works offline)
+        local_dir = getattr(self.config, 'local_dir', None)
+        if local_dir:
+            queries = self._load_from_local(local_dir, domain, max_queries)
+            if queries:
+                logger.info(f"Loaded {len(queries)} queries from local JSONL for {domain}")
+                return queries
+
+        # 2. Try HuggingFace (requires network)
         if not self.offline:
             try:
                 queries = self._load_from_huggingface(domain, domain_cfg, max_queries)
@@ -52,10 +62,43 @@ class DatasetLoader:
             except Exception as e:
                 logger.warning(f"Failed to load {domain} from HuggingFace ({e})")
 
-        logger.info(f"Using synthetic queries for {domain} (offline mode)")
+        # 3. Fallback: synthetic queries
+        logger.info(f"Using synthetic queries for {domain} (no local/HF data available)")
         return self._generate_synthetic_queries(domain, max_queries)
 
         return queries
+
+    def _load_from_local(
+        self, local_dir: str, domain: str, max_queries: int
+    ) -> Optional[List[Query]]:
+        """Load queries from a local JSONL file.
+
+        Expected path: {local_dir}/{domain}_queries.jsonl
+        Each line: {"id": "...", "question": "...", "answer": "...", "domain": "..."}
+        """
+        import json
+        path = os.path.join(local_dir, f"{domain}_queries.jsonl")
+        if not os.path.exists(path):
+            return None
+
+        queries = []
+        with open(path, "r", encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i >= max_queries:
+                    break
+                try:
+                    item = json.loads(line)
+                    queries.append(Query(
+                        id=item.get("id", f"{domain}_{i}"),
+                        text=item["question"].strip(),
+                        domain=domain,
+                        golden_answer=item.get("answer", ""),
+                    ))
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.debug(f"Skipping malformed line {i} in {path}: {e}")
+                    continue
+
+        return queries if queries else None
 
     def _load_from_huggingface(
         self, domain: str, cfg: DomainConfig, max_queries: int

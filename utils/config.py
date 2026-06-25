@@ -126,7 +126,11 @@ class ExperimentConfig:
 
         # Parse domain configs
         self.domain_configs: Dict[str, DomainConfig] = {}
-        for domain_name, dc in self._raw.get("datasets", {}).items():
+        datasets_raw = self._raw.get("datasets", {})
+        self.local_dir: Optional[str] = datasets_raw.get("local_dir", "") or None
+        for domain_name, dc in datasets_raw.items():
+            if domain_name == "local_dir":
+                continue  # Skip metadata key
             self.domain_configs[domain_name] = DomainConfig(**dc)
 
     @property

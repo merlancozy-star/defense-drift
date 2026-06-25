@@ -45,8 +45,10 @@ domains:
     - finance               # Finance（金融专业域）
 
 # --- 数据集加载配置 ---
-# 所有数据集均从 HuggingFace 加载，query_field 和 answer_field 按实际 schema 填写
+# 加载优先级：local_dir > HuggingFace > synthetic
+# 在有网机器上运行 download_datasets.py 生成 JSONL，传到服务器后填 local_dir
 datasets:
+  local_dir: ""                            # 本地 JSONL 数据目录，留空则从 HF 下载
   nq:
     hf_path: "nq_open"                    # NQ-Open: 开放域 QA，字段简洁
     hf_subset: null
