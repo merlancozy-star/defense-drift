@@ -149,21 +149,41 @@ class PoisonedRAGInjector(BaseInjector):
         clean_passages: List[Passage],
         n_poison: int,
     ) -> List[Passage]:
-        """Generate poison passages using templates.
+        """Generate poison passages using templates blended with real text.
 
-        Strategy: extract key entities from clean passages and flip/corrupt them.
+        Strategy: take a real Wikipedia passage and inject 1-2 fake claims
+        into it. This ensures the poison passage has realistic PPL (most of
+        the text IS real Wikipedia), while the injected claims are wrong.
         """
-        # Extract topic phrases from query
         topic = query.rstrip("?")
-        # Get some content from clean passages to ground the poison
         clean_texts = [p.text for p in clean_passages[:5]] if clean_passages else [query]
 
         poison_passages = []
-        templates = self._get_templates()
+        fake_claims = self._get_templates()
 
         for i in range(n_poison):
-            template = self.rng.choice(templates)
-            text = self._fill_template(template, topic, clean_texts, i)
+            # Pick a real Wikipedia passage as the base
+            base_text = clean_texts[i % len(clean_texts)]
+
+            # Split into sentences and replace 1-2 with fake claims
+            sentences = re.split(r'(?<=[.!?])\s+', base_text)
+            if len(sentences) < 3:
+                # Too short, prepend fake claim instead
+                claim = self._fill_template(
+                    self.rng.choice(fake_claims), topic, clean_texts, i
+                )
+                text = claim + " " + base_text
+            else:
+                # Replace 1-2 sentences with fake claims
+                n_replace = min(2, len(sentences) // 2)
+                replace_idx = self.rng.sample(range(len(sentences)), n_replace)
+                for idx in replace_idx:
+                    claim = self._fill_template(
+                        self.rng.choice(fake_claims), topic, clean_texts, i + idx
+                    )
+                    sentences[idx] = claim
+                text = " ".join(sentences)
+
             poison_passages.append(Passage(
                 id=f"poison_{self.attack_name}_{i}",
                 text=text,
