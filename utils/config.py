@@ -6,6 +6,7 @@ No hardcoded paths or parameters in the codebase.
 
 import yaml
 import os
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -128,6 +129,15 @@ class ExperimentConfig:
         self.domain_configs: Dict[str, DomainConfig] = {}
         datasets_raw = self._raw.get("datasets", {})
         self.local_dir: Optional[str] = datasets_raw.get("local_dir", "") or None
+        # Auto-detect defend_data/ in project root if not configured
+        if not self.local_dir:
+            from pathlib import Path
+            auto_path = Path(config_path).parent / "defend_data"
+            if auto_path.is_dir():
+                self.local_dir = str(auto_path)
+                logging.getLogger(__name__).info(
+                    f"Auto-detected dataset directory: {self.local_dir}"
+                )
         for domain_name, dc in datasets_raw.items():
             if domain_name == "local_dir":
                 continue  # Skip metadata key

@@ -62,7 +62,10 @@ class EmbedderWrapper:
                 trust_remote_code=True,
             )
             self._use_sentence_transformers = True
-            self._embedding_dim = self._st_model.get_sentence_embedding_dimension()
+            try:
+                self._embedding_dim = self._st_model.get_embedding_dimension()
+            except AttributeError:
+                self._embedding_dim = self._st_model.get_sentence_embedding_dimension()
             self._loaded = True
             logger.info(
                 f"Embedder loaded via sentence-transformers (dim={self._embedding_dim})"
@@ -80,7 +83,7 @@ class EmbedderWrapper:
 
         self.model = AutoModel.from_pretrained(
             self.model_path,
-            torch_dtype=self.torch_dtype,
+            dtype=self.torch_dtype,
             device_map=self.device,
             trust_remote_code=True,
         )
