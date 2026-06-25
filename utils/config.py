@@ -75,6 +75,7 @@ class DomainConfig:
     hf_path: str
     hf_subset: Optional[str] = None
     query_field: str = "question"
+    answer_field: Optional[str] = "answer"
     corpus_field: Optional[str] = None
     max_queries: int = 500
 

@@ -84,14 +84,19 @@ class DatasetLoader:
             if not query_text:
                 continue
 
-            # Try to extract answer
+            # Try to extract answer — first from config, then common field names
             answer = None
-            for ans_field in ["answer", "answers", "golden_answer", "label"]:
+            candidate_fields = []
+            if cfg.answer_field:
+                candidate_fields.append(cfg.answer_field)
+            candidate_fields.extend(["answer", "answers", "golden_answer", "label", "ideal_answer"])
+            for ans_field in candidate_fields:
                 ans = self._extract_field(item, ans_field)
                 if ans is not None:
-                    answer = str(ans) if isinstance(ans, list) else ans
                     if isinstance(ans, list) and len(ans) > 0:
                         answer = str(ans[0])
+                    else:
+                        answer = str(ans)
                     break
 
             queries.append(Query(
