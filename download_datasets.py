@@ -31,13 +31,12 @@ DATASETS = {
         "question_field": "question",
         "answer_field": "answer",
         "max_queries": 1000,
-        # Use simple English Wikipedia subset as corpus
-        "corpus_path": "wikipedia",
-        "corpus_subset": "20220301.en",
+        # Use Wikitext-103 as general-domain corpus (Parquet format, no scripts)
+        "corpus_path": "Salesforce/wikitext",
+        "corpus_subset": "wikitext-103-v1",
         "corpus_split": "train",
         "corpus_text_field": "text",
         "max_corpus": 20000,
-        "corpus_streaming": True,  # Wikipedia is huge, use streaming
     },
     "hotpotqa": {
         "query_path": "hotpot_qa",
@@ -164,7 +163,7 @@ def _download_external_corpus(name, cfg, c_path):
     from datasets import load_dataset
     print(f"[CORPUS] {name}: {cfg['corpus_path']} (this may take a minute...)")
 
-    streaming = cfg.get("corpus_streaming", False)
+    streaming = cfg.get("corpus_streaming", False) or False
     try:
         if cfg.get("corpus_subset"):
             ds = load_dataset(cfg["corpus_path"], cfg["corpus_subset"],
