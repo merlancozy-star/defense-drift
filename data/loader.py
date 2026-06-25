@@ -240,8 +240,11 @@ class DatasetLoader:
     ) -> List[str]:
         """Load the corpus (document collection) for a domain.
 
-        For RAG-QA Arena datasets, the corpus is typically the set of all
-        passages/documents that will be indexed.
+        Loading priority:
+        1. Explicit corpus_path argument (local file)
+        2. {local_dir}/{domain}_corpus.jsonl
+        3. HuggingFace dataset
+        4. Empty list → caller falls back to synthetic
 
         Args:
             domain: Domain name.
@@ -250,26 +253,44 @@ class DatasetLoader:
         Returns:
             List of document texts.
         """
+        # 1. Explicit path
         if corpus_path and Path(corpus_path).exists():
             return self._load_local_corpus(corpus_path)
 
-        # For HuggingFace datasets, we use their passage collections
-        domain_cfg = self.config.get_domain_config(domain)
-        try:
-            from datasets import load_dataset  # Lazy import
-            dataset = load_dataset(domain_cfg.hf_path, )
-            if isinstance(dataset, dict):
-                dataset = dataset.get("corpus", dataset.get("train", list(dataset.values())[0]))
+        # 2. Local JSONL from config's local_dir
+        local_dir = getattr(self.config, 'local_dir', None)
+        if local_dir:
+            local_corpus = os.path.join(local_dir, f"{domain}_corpus.jsonl")
+            if os.path.exists(local_corpus):
+                texts = self._load_local_corpus(local_corpus)
+                if texts:
+                    logger.info(f"Loaded {len(texts)} corpus passages from {local_corpus}")
+                    return texts
 
-            texts = []
-            for item in dataset:
-                text = self._extract_field(item, "text") or self._extract_field(item, "passage")
-                if text:
-                    texts.append(str(text))
-            return texts
-        except Exception:
-            logger.warning(f"Could not load corpus for {domain}, will use retrieved passages only")
-            return []
+        # 3. HuggingFace (skip if offline)
+        if not self.offline:
+            domain_cfg = self.config.get_domain_config(domain)
+            try:
+                from datasets import load_dataset  # Lazy import
+                dataset = load_dataset(domain_cfg.hf_path,
+                                       domain_cfg.hf_subset) if domain_cfg.hf_subset else \
+                          load_dataset(domain_cfg.hf_path)
+                if isinstance(dataset, dict):
+                    dataset = dataset.get("corpus", dataset.get("train",
+                                       list(dataset.values())[0]))
+                texts = []
+                for item in dataset:
+                    text = self._extract_field(item, "text") or self._extract_field(item, "passage")
+                    if text:
+                        texts.append(str(text))
+                if texts:
+                    return texts
+            except Exception:
+                pass
+
+        # 4. No corpus available
+        logger.info(f"No corpus available for {domain}, will use synthetic passages")
+        return []
 
     def _load_local_corpus(self, path: str) -> List[str]:
         """Load corpus from local JSONL or CSV file."""
