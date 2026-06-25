@@ -116,11 +116,17 @@ class UnitAssembler:
         labels_arr = np.array([1 if u.is_poison else 0 for u in all_units])
 
         auroc = compute_auroc(scores_arr, labels_arr)
+
+        # Debug: score distribution by class
+        clean_scores = scores_arr[labels_arr == 0]
+        poison_scores = scores_arr[labels_arr == 1]
         logger.info(
             f"Assembled {len(all_units)} units | "
             f"domain={domain} signal={self.scorer.name} "
             f"attack={self.injector.attack_name} ratio={poison_ratio} | "
-            f"AUROC={auroc:.4f}"
+            f"AUROC={auroc:.4f} | "
+            f"clean_μ={clean_scores.mean():.2f} poison_μ={poison_scores.mean():.2f} "
+            f"clean_σ={clean_scores.std():.2f} poison_σ={poison_scores.std():.2f}"
         )
 
         return all_units, auroc
