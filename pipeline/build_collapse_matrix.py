@@ -164,7 +164,7 @@ class CollapseMatrixBuilder:
         retriever = self._build_retriever()
 
         # Load corpus and build index for this domain
-        loader = DatasetLoader(self.config)
+        loader = DatasetLoader(self.config, offline=getattr(self.config, 'offline', False))
         corpus = loader.load_corpus(domain)
         if corpus:
             retriever.index_corpus(corpus)
@@ -174,18 +174,7 @@ class CollapseMatrixBuilder:
                 f"No corpus found for {domain}, using synthetic passages. "
                 f"Results will NOT be valid for publication."
             )
-            synthetic_docs = [
-                f"This is a synthetic document about {domain} topic. It contains general knowledge about the subject matter.",
-                f"Research in {domain} has advanced significantly in recent years with many new discoveries.",
-                f"The field of {domain} encompasses many sub-disciplines and methodologies.",
-                f"Recent findings in {domain} challenge previously held assumptions about key mechanisms.",
-                f"Understanding {domain} requires interdisciplinary approaches combining theory and practice.",
-                f"Historical context is essential for understanding modern developments in {domain}.",
-                f"Several meta-analyses in {domain} have identified consistent patterns across studies.",
-                f"Methodological challenges in {domain} research include sample size and reproducibility.",
-                f"Emerging technologies are transforming how researchers approach problems in {domain}.",
-                f"International collaboration has accelerated progress in understanding {domain} phenomena.",
-            ] * 20  # 200 synthetic docs
+            synthetic_docs = _get_synthetic_corpus(domain)
             retriever.index_corpus(synthetic_docs)
 
         # Assemble units and compute AUROC
@@ -401,3 +390,50 @@ class CollapseMatrixBuilder:
             f"[ACCEPTANCE] Signals with significant collapse: "
             f"{signals_with_collapse} (need ≥{criteria.min_collapse_signals})"
         )
+
+
+def _get_synthetic_corpus(domain: str) -> List[str]:
+    """Domain-specific synthetic corpus for offline/testing use.
+
+    These are varied enough in vocabulary and structure to exercise
+    the embedder and PPL scorer meaningfully, but they are NOT real
+    domain documents — results with synthetic corpus are for pipeline
+    validation only.
+    """
+    corpora = {
+        "nq": [
+            "The Declaration of Independence was adopted by the Continental Congress on July 4, 1776. Thomas Jefferson served as the primary author, with contributions from John Adams and Benjamin Franklin. The document outlined grievances against King George III and articulated the colonies' right to self-governance based on natural rights philosophy.",
+            "Paris is the capital and largest city of France, situated on the river Seine in northern France. Known as the City of Light, Paris is a global center for art, fashion, gastronomy, and culture. The city is home to landmarks such as the Eiffel Tower, Notre-Dame Cathedral, and the Louvre Museum.",
+            "The Solar System consists of eight planets orbiting the Sun: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune. Pluto was reclassified as a dwarf planet in 2006 by the International Astronomical Union. The inner planets are rocky, while the outer planets are gas giants.",
+            "The United Nations was founded on October 24, 1945, following the end of World War II. The organization's primary goals include maintaining international peace and security, promoting human rights, and fostering social and economic development. Its headquarters is located in New York City.",
+            "Climate change is primarily driven by the greenhouse effect, where gases like carbon dioxide and methane trap heat in Earth's atmosphere. Human activities including fossil fuel combustion, deforestation, and industrial agriculture have accelerated this process. The result is rising global temperatures and increasingly extreme weather events.",
+            "Penicillin was discovered by Alexander Fleming in 1928 at St. Mary's Hospital in London. Fleming observed that a mold contaminant (Penicillium notatum) inhibited the growth of Staphylococcus bacteria. This accidental discovery revolutionized medicine by introducing the first true antibiotic.",
+            "Photosynthesis is the process by which green plants, algae, and some bacteria convert light energy into chemical energy. Using chlorophyll, they combine carbon dioxide and water to produce glucose and oxygen. The overall equation is 6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂, powered by sunlight.",
+            "Machine learning is a subset of artificial intelligence that enables systems to learn and improve from experience without being explicitly programmed. Key approaches include supervised learning, unsupervised learning, and reinforcement learning. Deep neural networks have achieved remarkable results in image recognition and natural language processing.",
+            "The Mona Lisa was painted by Leonardo da Vinci in the early 16th century, likely between 1503 and 1519. The portrait, believed to depict Lisa Gherardini, is renowned for its enigmatic smile and innovative sfumato technique. It is displayed at the Louvre Museum in Paris.",
+            "The speed of light in vacuum is exactly 299,792,458 meters per second, a fundamental constant of physics denoted by c. According to Einstein's theory of special relativity, nothing with mass can reach or exceed this speed. Light travels approximately 9.46 trillion kilometers in one year, a distance known as a light-year.",
+        ],
+        "hotpotqa": [
+            "The Beatles were an English rock band formed in Liverpool in 1960, comprising John Lennon, Paul McCartney, George Harrison, and Ringo Starr. After the band's breakup in 1970, John Lennon pursued a successful solo career and collaborated with artist Yoko Ono, whom he married in 1969. Lennon's solo work includes the iconic album 'Imagine'.",
+            "SpaceX, founded by Elon Musk in 2002, revolutionized space travel by developing reusable rocket technology. Musk also co-founded Tesla Inc., which manufactures electric vehicles and clean energy products. Tesla's Model 3 became the world's best-selling electric vehicle.",
+            "Leonardo DiCaprio is an American actor who starred in James Cameron's Titanic (1997) alongside Kate Winslet, and later in Christopher Nolan's Inception (2010). Both films were major critical and commercial successes. DiCaprio won his first Academy Award for Best Actor for his role in The Revenant (2015).",
+            "Switzerland is a landlocked country that borders France to the west and Germany to the north, among other neighboring nations. Its de facto capital is Bern, while Zurich is its largest city and a major global financial hub.",
+        ],
+        "bioasq": [
+            "BRCA1 is a tumor suppressor gene located on chromosome 17q21. Mutations in BRCA1 significantly increase the risk of developing breast and ovarian cancers. The gene produces a protein involved in DNA repair, cell cycle checkpoint control, and maintenance of genomic stability.",
+            "Metformin is a first-line oral medication for type 2 diabetes mellitus. It works primarily by reducing hepatic glucose production through inhibition of gluconeogenesis, while also increasing peripheral insulin sensitivity. Common side effects include gastrointestinal disturbances such as nausea and diarrhea.",
+            "ACE inhibitors are a class of medications used primarily for hypertension and heart failure. They work by inhibiting the angiotensin-converting enzyme, reducing the production of angiotensin II. Common side effects include a persistent dry cough, hyperkalemia, and in rare cases, angioedema.",
+            "Alzheimer's disease is associated with several genetic risk factors including the APOE ε4 allele. Mutations in APP, PSEN1, and PSEN2 genes cause early-onset familial Alzheimer's disease. The pathological hallmarks include extracellular amyloid-beta plaques and intracellular neurofibrillary tangles composed of hyperphosphorylated tau protein.",
+            "Immunotherapy has emerged as a promising approach for melanoma treatment, particularly immune checkpoint inhibitors targeting CTLA-4 and PD-1. These agents work by releasing the brakes on T cells, allowing the immune system to recognize and attack tumor cells. Combination therapy with nivolumab and ipilimumab has shown improved survival rates.",
+        ],
+        "finance": [
+            "Interest rate changes have a significant inverse relationship with bond prices. When interest rates rise, existing bonds with lower coupon rates become less attractive, causing their market prices to fall. The duration of a bond measures its sensitivity to interest rate changes.",
+            "Quantitative easing (QE) is an unconventional monetary policy tool used by central banks to stimulate the economy when standard policy becomes ineffective. By purchasing large quantities of government bonds and other securities, central banks increase the money supply and lower long-term interest rates. This can lead to higher inflation expectations.",
+            "A call option gives the holder the right, but not the obligation, to buy an underlying asset at a specified strike price before expiration. A put option gives the right to sell. Options are priced using models such as Black-Scholes, which account for factors including volatility, time to expiration, and risk-free interest rate.",
+            "The Weighted Average Cost of Capital (WACC) represents a firm's average cost of financing from all sources, weighted by their proportion in the capital structure. WACC = (E/V)×Re + (D/V)×Rd×(1-Tc), where E is equity value, D is debt value, V is total value, Re is cost of equity, Rd is cost of debt, and Tc is the corporate tax rate.",
+        ],
+    }
+    default = corpora.get("nq", list(corpora.values())[0])
+    docs = corpora.get(domain, default)
+    # Repeat to reach sufficient document count for FAISS indexing
+    return docs * 8  # ~80 varied passages

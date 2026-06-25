@@ -12,6 +12,7 @@ class RetrievalConfig:
     chunk_overlap: int = 32
     top_k: int = 10
     similarity_metric: str = "cosine"
+    faiss_index_type: str = "Flat"
     embedder_path: str = ""
     reranker_path: str = ""
     reranker_enabled: bool = False

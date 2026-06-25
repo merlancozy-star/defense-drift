@@ -61,14 +61,16 @@ logger = logging.getLogger("separability_diagnostic")
 @click.option("--full-matrix", is_flag=True,
               help="Run the full Cartesian product matrix")
 @click.option("--dry-run", is_flag=True,
-              help="Use synthetic data only (no real models/datasets needed)")
+              help="Synthetic data + random AUROC (no models, no datasets)")
+@click.option("--offline", is_flag=True,
+              help="Skip HF dataset download, use synthetic data with REAL models")
 @click.option("--output-dir", default=None,
               help="Override output directory")
 @click.option("--no-parallel", is_flag=True,
               help="Disable parallel processing")
 def main(
     config, signal, domain, source, target, attack, ratio,
-    max_queries, full_matrix, dry_run, output_dir, no_parallel,
+    max_queries, full_matrix, dry_run, offline, output_dir, no_parallel,
 ):
     """Defense Drift — Separability Collapse Diagnostic.
 
@@ -79,10 +81,15 @@ def main(
     cfg = load_config(config)
     if output_dir:
         cfg.output.results_dir = output_dir
+    cfg.offline = offline  # Attach offline flag for downstream components
 
     logger.info("=" * 60)
     logger.info("Defense Drift — Separability Collapse Diagnostic")
     logger.info("=" * 60)
+
+    if offline:
+        logger.warning("OFFLINE mode: skipping HF datasets, using synthetic queries+corpus")
+        logger.warning("Model-based scoring (PPL/embeddings) is REAL — only the text is synthetic")
 
     if dry_run:
         logger.warning(

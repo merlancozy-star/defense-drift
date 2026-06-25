@@ -185,6 +185,7 @@ class ExperimentConfig:
             "chunk_overlap": self.retrieval.chunk_overlap,
             "top_k": self.retrieval.top_k,
             "similarity_metric": self.retrieval.similarity_metric,
+            "faiss_index_type": self.retrieval.faiss_index_type,
             "embedder_path": self.embedder.path,
             "reranker_path": self.reranker.path,
             "reranker_enabled": self.reranker.enabled,

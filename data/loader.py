@@ -24,8 +24,9 @@ class DatasetLoader:
     - Synthetic data for testing
     """
 
-    def __init__(self, config: ExperimentConfig):
+    def __init__(self, config: ExperimentConfig, offline: bool = False):
         self.config = config
+        self.offline = offline
         self.rng = random.Random(config.diagnostic.random_seed)
 
     def load_queries(self, domain: str, max_queries: Optional[int] = None) -> List[Query]:
@@ -42,14 +43,17 @@ class DatasetLoader:
         if max_queries is None:
             max_queries = domain_cfg.max_queries
 
-        try:
-            queries = self._load_from_huggingface(domain, domain_cfg, max_queries)
-        except Exception as e:
-            logger.warning(
-                f"Failed to load {domain} from HuggingFace ({e}). "
-                f"Falling back to synthetic data."
-            )
-            queries = self._generate_synthetic_queries(domain, max_queries)
+        # Skip HF entirely in offline mode (avoids network timeout delays)
+        if not self.offline:
+            try:
+                queries = self._load_from_huggingface(domain, domain_cfg, max_queries)
+                if queries:
+                    return queries
+            except Exception as e:
+                logger.warning(f"Failed to load {domain} from HuggingFace ({e})")
+
+        logger.info(f"Using synthetic queries for {domain} (offline mode)")
+        return self._generate_synthetic_queries(domain, max_queries)
 
         return queries
 

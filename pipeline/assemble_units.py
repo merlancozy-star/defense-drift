@@ -42,7 +42,8 @@ class UnitAssembler:
         self.retriever = retriever
         self.scorer = scorer
         self.injector = injector
-        self.loader = DatasetLoader(config)
+        self.offline = getattr(config, 'offline', False)
+        self.loader = DatasetLoader(config, offline=self.offline)
 
     def assemble(
         self,
