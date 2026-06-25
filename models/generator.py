@@ -62,11 +62,13 @@ class GeneratorWrapper:
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
-            torch_dtype=self.torch_dtype,
+            dtype=self.torch_dtype,
             device_map=self.device,
             trust_remote_code=True,
-            output_attentions=self.output_attentions,
         )
+        # Enable attention output (required by AttentionVarianceScorer)
+        if self.output_attentions:
+            self.model.config.output_attentions = True
         self.model.eval()
         self._loaded = True
         logger.info(f"Generator loaded on {self.device}")

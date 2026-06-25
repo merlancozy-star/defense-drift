@@ -64,13 +64,13 @@ class DatasetLoader:
 
         # Load the dataset
         if hf_subset:
-            dataset = load_dataset(hf_path, hf_subset, split="train", trust_remote_code=True)
+            dataset = load_dataset(hf_path, hf_subset, split="train", )
         else:
             try:
-                dataset = load_dataset(hf_path, split="train", trust_remote_code=True)
+                dataset = load_dataset(hf_path, split="train", )
             except Exception:
                 # Try without split specification
-                dataset = load_dataset(hf_path, trust_remote_code=True)
+                dataset = load_dataset(hf_path, )
                 if isinstance(dataset, dict):
                     dataset = dataset.get("train", list(dataset.values())[0])
 
@@ -210,7 +210,7 @@ class DatasetLoader:
         domain_cfg = self.config.get_domain_config(domain)
         try:
             from datasets import load_dataset  # Lazy import
-            dataset = load_dataset(domain_cfg.hf_path, trust_remote_code=True)
+            dataset = load_dataset(domain_cfg.hf_path, )
             if isinstance(dataset, dict):
                 dataset = dataset.get("corpus", dataset.get("train", list(dataset.values())[0]))
 

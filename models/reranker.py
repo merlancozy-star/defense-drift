@@ -6,7 +6,7 @@ Optional — pipeline can run with embedder-only retrieval.
 
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoModel, AutoTokenizer
 from typing import List, Tuple
 import logging
 
@@ -38,6 +38,7 @@ class RerankerWrapper:
         self.model = None
         self.tokenizer = None
         self._loaded = False
+        self._use_cosine = False
 
     def load(self):
         if self._loaded:
@@ -47,12 +48,29 @@ class RerankerWrapper:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, trust_remote_code=True
         )
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            self.model_path,
-            torch_dtype=self.torch_dtype,
-            device_map=self.device,
-            trust_remote_code=True,
-        )
+        # Try sequence classification first, fall back to AutoModel
+        try:
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                self.model_path,
+                dtype=self.torch_dtype,
+                device_map=self.device,
+                trust_remote_code=True,
+            )
+        except Exception:
+            logger.warning(
+                "AutoModelForSequenceClassification failed — "
+                "Qwen3-Reranker may use a custom architecture. "
+                "Using AutoModel as fallback (cosine similarity scoring)."
+            )
+            self.model = AutoModel.from_pretrained(
+                self.model_path,
+                dtype=self.torch_dtype,
+                device_map=self.device,
+                trust_remote_code=True,
+            )
+            self._use_cosine = True
+        else:
+            self._use_cosine = False
         self.model.eval()
         self._loaded = True
         logger.info(f"Reranker loaded on {self.device}")
@@ -92,20 +110,42 @@ class RerankerWrapper:
         scores = []
         for i in range(0, len(passages), batch_size):
             batch = passages[i:i + batch_size]
-            pairs = [(query, p) for p in batch]
 
-            enc = self.tokenizer(
-                pairs,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=512,
-            ).to(self.device)
+            if self._use_cosine:
+                # Cosine similarity mode: embed query and passages separately
+                q_enc = self.tokenizer(
+                    query, return_tensors="pt", padding=True,
+                    truncation=True, max_length=512,
+                ).to(self.device)
+                p_enc = self.tokenizer(
+                    batch, return_tensors="pt", padding=True,
+                    truncation=True, max_length=512,
+                ).to(self.device)
 
-            outputs = self.model(**enc)
-            batch_scores = outputs.logits.squeeze(-1).cpu().tolist()
-            if isinstance(batch_scores, float):
-                batch_scores = [batch_scores]
+                q_out = self.model(**q_enc)
+                p_out = self.model(**p_enc)
+
+                # Mean pooling
+                q_emb = _mean_pool(q_out.last_hidden_state, q_enc["attention_mask"])
+                p_emb = _mean_pool(p_out.last_hidden_state, p_enc["attention_mask"])
+
+                # Cosine similarity
+                q_emb = F.normalize(q_emb, dim=-1)
+                p_emb = F.normalize(p_emb, dim=-1)
+                batch_scores = (q_emb @ p_emb.T).squeeze(0).cpu().tolist()
+                if isinstance(batch_scores, float):
+                    batch_scores = [batch_scores]
+            else:
+                pairs = [(query, p) for p in batch]
+                enc = self.tokenizer(
+                    pairs, return_tensors="pt", padding=True,
+                    truncation=True, max_length=512,
+                ).to(self.device)
+                outputs = self.model(**enc)
+                batch_scores = outputs.logits.squeeze(-1).cpu().tolist()
+                if isinstance(batch_scores, float):
+                    batch_scores = [batch_scores]
+
             scores.extend(batch_scores)
 
         # Sort by score descending
@@ -119,3 +159,9 @@ class RerankerWrapper:
 
     def is_loaded(self) -> bool:
         return self._loaded
+
+
+def _mean_pool(hidden: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Mean pooling over token dimension, excluding padding."""
+    mask = mask.unsqueeze(-1).float()
+    return (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
