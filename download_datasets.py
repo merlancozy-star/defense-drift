@@ -31,12 +31,13 @@ DATASETS = {
         "question_field": "question",
         "answer_field": "answer",
         "max_queries": 1000,
-        # NQ-Open has no corpus → download Wikipedia subset
-        "corpus_path": "wiki_dpr",
-        "corpus_subset": "psgs_w100.multiset.compressed",
+        # Use simple English Wikipedia subset as corpus
+        "corpus_path": "wikipedia",
+        "corpus_subset": "20220301.en",
         "corpus_split": "train",
         "corpus_text_field": "text",
-        "max_corpus": 50000,
+        "max_corpus": 20000,
+        "corpus_streaming": True,  # Wikipedia is huge, use streaming
     },
     "hotpotqa": {
         "query_path": "hotpot_qa",
@@ -71,6 +72,7 @@ DATASETS = {
         "corpus_split": "corpus",
         "corpus_text_field": "text",
         "max_corpus": 50000,
+        "corpus_streaming": False,
     },
 }
 
@@ -161,12 +163,15 @@ def _download_external_corpus(name, cfg, c_path):
     """Download a separate corpus dataset."""
     from datasets import load_dataset
     print(f"[CORPUS] {name}: {cfg['corpus_path']} (this may take a minute...)")
+
+    streaming = cfg.get("corpus_streaming", False)
     try:
         if cfg.get("corpus_subset"):
             ds = load_dataset(cfg["corpus_path"], cfg["corpus_subset"],
-                              split=cfg["corpus_split"])
+                              split=cfg["corpus_split"], streaming=streaming)
         else:
-            ds = load_dataset(cfg["corpus_path"], split=cfg["corpus_split"])
+            ds = load_dataset(cfg["corpus_path"], split=cfg["corpus_split"],
+                              streaming=streaming)
     except Exception:
         ds = _load_fallback(cfg["corpus_path"], cfg.get("corpus_subset"),
                             cfg["corpus_split"])
@@ -181,11 +186,17 @@ def _download_external_corpus(name, cfg, c_path):
             t = _extract(item, text_field)
             if not t or len(str(t).strip()) < 50:
                 continue
+            # For Wikipedia: take first 500 chars (first paragraph) as a passage
+            text = str(t).strip()
+            if name == "nq" and len(text) > 500:
+                text = text[:500] + "..."
             f.write(json.dumps({
                 "id": f"{name}_corpus_{count}",
-                "text": str(t).strip(),
+                "text": text,
             }, ensure_ascii=False) + "\n")
             count += 1
+            if count % 5000 == 0:
+                print(f"  ... {count} passages")
     print(f"  → {count} passages saved ({_size_kb(c_path):.0f} KB)")
 
 
