@@ -60,16 +60,22 @@ class GeneratorWrapper:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
+        # SDPA doesn't support output_attentions → use eager if needed
+        load_kwargs = dict(
             dtype=self.torch_dtype,
             device_map=self.device,
             trust_remote_code=True,
         )
-        # Enable attention output (required by AttentionVarianceScorer)
         if self.output_attentions:
-            self.model.config.output_attentions = True
+            load_kwargs["attn_implementation"] = "eager"
+
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_path, **load_kwargs
+        )
         self.model.eval()
+
+        if self.output_attentions:
+            logger.info("Generator using eager attention (output_attentions=True)")
         self._loaded = True
         logger.info(f"Generator loaded on {self.device}")
 
