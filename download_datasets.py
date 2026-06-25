@@ -59,19 +59,14 @@ DATASETS = {
         "corpus_path": None,
     },
     "finance": {
-        "query_path": "Linq-AI-Research/FinanceRAG",
-        "query_subset": "FinQA",
-        "query_split": "queries",
-        "question_field": "question",
-        "answer_field": "answer",
+        "query_path": "gbharti/finance-alpaca",
+        "query_subset": None,
+        "query_split": "train",
+        "question_field": "instruction",
+        "answer_field": "output",
         "max_queries": 500,
-        # FinanceRAG has a separate 'corpus' split
-        "corpus_path": "Linq-AI-Research/FinanceRAG",
-        "corpus_subset": "FinQA",
-        "corpus_split": "corpus",
-        "corpus_text_field": "text",
-        "max_corpus": 50000,
-        "corpus_streaming": False,
+        # No dedicated corpus available, reuse wikitext as fallback
+        "corpus_path": None,
     },
 }
 
@@ -114,10 +109,25 @@ def download_datasets(output_dir: str):
             # Extract from queries' context field
             _extract_hotpotqa_corpus(cfg, q_path, c_path)
         elif name == "bioasq":
-            # Extract from queries' passages field
+            # BioASQ: corpus from snippets/passages field
             _extract_bioasq_corpus(cfg, c_path)
+            # If extraction failed, use wikitext fallback
+            if not os.path.exists(c_path) or os.path.getsize(c_path) < 1000:
+                print(f"  BioASQ corpus extraction failed, using wikitext fallback")
+                nq_corpus = os.path.join(output_dir, "nq_corpus.jsonl")
+                if os.path.exists(nq_corpus):
+                    import shutil
+                    shutil.copy(nq_corpus, c_path)
+                    print(f"  → copied nq_corpus ({_size_kb(c_path):.0f} KB)")
         else:
-            # Use the same data as corpus
+            # No corpus source defined → copy nq_corpus as fallback
+            nq_c = os.path.join(output_dir, "nq_corpus.jsonl")
+            if os.path.exists(nq_c):
+                import shutil
+                shutil.copy(nq_c, c_path)
+                print(f"  → using nq_corpus fallback ({_size_kb(c_path):.0f} KB)")
+            else:
+                print(f"  → no corpus available for {name}")
             print(f"[CORPUS] {name}: using queries as corpus fallback")
             import shutil
             shutil.copy(q_path, c_path)
@@ -238,7 +248,14 @@ def _extract_hotpotqa_corpus(cfg, q_path, c_path):
 
 
 def _extract_bioasq_corpus(cfg, c_path):
-    """Extract PubMed passages from BioASQ mini dataset."""
+    """Extract passages from BioASQ mini dataset.
+
+    BioASQ mini schema (question-answer-passages):
+      - question: str
+      - answer: str
+      - passages: list of dicts with 'text' field, OR list of strings
+    Tries multiple field structures.
+    """
     from datasets import load_dataset
     print(f"[CORPUS] bioasq: extracting from passages field...")
     try:
@@ -252,13 +269,26 @@ def _extract_bioasq_corpus(cfg, c_path):
     count = 0
     with open(c_path, "w", encoding="utf-8") as f:
         for item in ds:
-            passages = item.get("passages", [])
+            # Try multiple possible field names and structures
+            passages = (item.get("passages") or item.get("context") or
+                       item.get("snippets") or item.get("documents") or [])
             if isinstance(passages, dict):
-                passages = passages.get("text", [])
+                # {'text': ['passage1', 'passage2']} or {'text': 'single'}
+                for key in ["text", "passage", "content"]:
+                    if key in passages:
+                        passages = passages[key]
+                        break
+                else:
+                    passages = list(passages.values())
             if isinstance(passages, str):
                 passages = [passages]
+            if not isinstance(passages, list):
+                continue
             for p in passages:
-                p_text = p if isinstance(p, str) else str(p)
+                if isinstance(p, dict):
+                    p_text = p.get("text") or p.get("passage") or p.get("content") or str(p)
+                else:
+                    p_text = str(p)
                 if p_text in seen or len(p_text.strip()) < 30:
                     continue
                 seen.add(p_text)
