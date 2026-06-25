@@ -129,7 +129,9 @@ class CollapseMatrixBuilder:
         factory = ATTACK_REGISTRY[attack_name]
         kwargs = {}
         if attack_name == "poisonedrag":
-            kwargs["mode"] = self.config.poison["poisonedrag"].template_mode
+            poison_cfg = self.config.poison["poisonedrag"]
+            kwargs["mode"] = poison_cfg.generation_model  # "template" or "generator"
+            kwargs["template_type"] = poison_cfg.template_mode  # "contradict" etc.
         elif attack_name == "corruptrag":
             kwargs["corrupt_ratio"] = self.config.poison["corruptrag"].corrupt_ratio
 
